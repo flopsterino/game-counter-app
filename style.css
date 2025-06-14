@@ -222,3 +222,14 @@ input:focus, select:focus {
 .history-details p { margin: 5px 0; font-weight: 500;}
 .history-details ul { margin: 10px 0 0; padding-left: 20px; list-style-type: square; }
 .history-details li { margin-bottom: 5px; color: var(--subtle-text-color); }
+
+/* --- Added for new modals --- */
+.modal-content p {
+    color: var(--subtle-text-color);
+    line-height: 1.5;
+    margin: 15px 0 25px;
+}
+.modal-button-group {
+    display: flex;
+    gap: 10px;
+}
