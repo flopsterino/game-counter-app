@@ -70,7 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showModal(modalName, show = true) {
-        modals[modalName].classList.toggle('active', show);
+        if (modals[modalName]) {
+            modals[modalName].classList.toggle('active', show);
+        } else {
+            console.error(`Modal with name "${modalName}" not found.`);
+        }
     }
 
     function updateGameSelect() {
@@ -219,3 +223,90 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.consecutiveWinRounds >= ROUNDS_TO_WIN) {
                 declareWinner(soleLeader);
             } else {
+                const roundsRemaining = ROUNDS_TO_WIN - state.consecutiveWinRounds;
+                alert(`${soleLeader} has the lead with ${highScore} points! They must hold the lead for ${roundsRemaining} more round(s) to win. Start the next round.`);
+            }
+        }
+    }
+
+    function declareWinner(winner) {
+        document.getElementById(`player-card-${winner.replace(/\s+/g, '-')}`).classList.add('winner');
+        document.getElementById('winner-name').textContent = winner;
+
+        const endTime = new Date().getTime();
+        const durationMs = endTime - state.gameHistory[0].startTime;
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+        
+        state.gameHistory[0].endTime = endTime;
+        state.gameHistory[0].winner = winner;
+        state.gameHistory[0].duration = `${minutes}m ${seconds}s`;
+        saveState();
+
+        showModal('winner');
+    }
+    
+    function startNewGame() {
+        showModal('winner', false);
+        playerNameInputsContainer.innerHTML = `
+            <input type="text" placeholder="Player 1 Name" class="player-name-input">
+            <input type="text" placeholder="Player 2 Name" class="player-name-input">
+        `;
+        showScreen('setup');
+    }
+
+    // --- EVENT LISTENERS ---
+    document.getElementById('add-player-field-btn').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = `Player ${playerNameInputsContainer.children.length + 1} Name`;
+        input.className = 'player-name-input';
+        playerNameInputsContainer.appendChild(input);
+    });
+
+    document.getElementById('start-game-btn').addEventListener('click', startGame);
+
+    scoreboard.addEventListener('click', e => {
+        if (e.target.classList.contains('add-score-btn')) {
+            const player = e.target.dataset.player;
+            const input = e.target.previousElementSibling;
+            const points = parseInt(input.value, 10);
+            addScore(player, points);
+            input.value = '';
+        }
+    });
+
+    document.getElementById('new-game-from-winner-btn').addEventListener('click', startNewGame);
+    document.getElementById('new-game-from-game-btn').addEventListener('click', startNewGame);
+
+    document.getElementById('manage-games-btn').addEventListener('click', () => {
+        updateManageGamesList();
+        showModal('manageGames');
+    });
+    document.getElementById('close-manage-games-btn').addEventListener('click', () => showModal('manageGames', false));
+    
+    document.getElementById('save-new-game-btn').addEventListener('click', () => {
+        const nameInput = document.getElementById('new-game-name');
+        const scoreInput = document.getElementById('new-game-score');
+        const name = nameInput.value.trim();
+        const score = parseInt(scoreInput.value, 10);
+
+        if (name && score > 0) {
+            state.games.push({ name, winningScore: score });
+            saveState();
+            updateGameSelect();
+            updateManageGamesList();
+            nameInput.value = '';
+            scoreInput.value = '';
+        } else {
+            alert('Please enter a valid name and winning score.');
+        }
+    });
+
+    document.getElementById('saved-games-list').addEventListener('click', e => {
+        if (e.target.classList.contains('delete-game-btn')) {
+            const index = e.target.dataset.index;
+            if (confirm(`Are you sure you want to delete ${state.games[index].name}?`)) {
+                state.games.splice(index, 1);
+                saveState();
+                updateGameSelect
