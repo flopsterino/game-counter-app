@@ -11,8 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
         gameStartTime: null,
         gameHistory: [],
         isFinalRound: false,
-        potentialWinner: null, // Who is currently in the lead at the end of a round
-        consecutiveWinRounds: 0 // How many rounds they've been in the lead
+        potentialWinner: null,
+        consecutiveWinRounds: 0
     };
 
     // DOM ELEMENTS
@@ -33,20 +33,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- DATA PERSISTENCE ---
     function saveState() {
-        localStorage.setItem('gameCounterState', JSON.stringify({
-            games: state.games,
-            gameHistory: state.gameHistory
-        }));
+        try {
+            const stateToSave = {
+                games: state.games,
+                gameHistory: state.gameHistory
+            };
+            localStorage.setItem('gameCounterState', JSON.stringify(stateToSave));
+        } catch (e) {
+            console.error("Could not save state to localStorage", e);
+        }
     }
 
     function loadState() {
-        const savedState = JSON.parse(localStorage.getItem('gameCounterState'));
-        if (savedState) {
-            state.games = savedState.games || [];
-            state.gameHistory = savedState.gameHistory || [];
+        try {
+            const savedState = JSON.parse(localStorage.getItem('gameCounterState'));
+            if (savedState) {
+                state.games = savedState.games || [];
+                state.gameHistory = savedState.gameHistory || [];
+            }
+        } catch (e) {
+            console.error("Could not parse saved state, starting fresh.", e);
+            state.games = [];
+            state.gameHistory = [];
         }
+        
         if (state.games.length === 0) {
             state.games.push({ name: 'Rummikub', winningScore: 100 });
+            saveState(); // Save the default game if storage was empty
         }
     }
 
@@ -68,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const listEl = document.getElementById('saved-games-list');
         listEl.innerHTML = state.games.map((game, index) => `
             <div>
-                <span class="math-inline">\{game\.name\} \(</span>{game.winningScore} points)
+                <span><span class="math-inline">\{game\.name\} \(</span>{game.winningScore} points)</span>
                 <button data-index="${index}" class="delete-game-btn">X</button>
             </div>
         `).join('');
@@ -128,10 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         state.currentGame = gameSelect.value;
+        if (!state.currentGame) {
+            alert('Please create a game first in "Manage Games"!');
+            return;
+        }
+
         state.scores = {};
         state.players.forEach(p => state.scores[p] = 0);
         state.gameStartTime = new Date().getTime();
-        // Reset all endgame state variables
         state.isFinalRound = false; 
         state.potentialWinner = null;
         state.consecutiveWinRounds = 0;
@@ -187,39 +204,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const leaders = state.players.filter(p => state.scores[p] === highScore);
 
         if (leaders.length > 1) {
-            // TIE for the lead
             state.potentialWinner = null;
             state.consecutiveWinRounds = 0;
             alert(`Tie for the lead at ${highScore} points! The game continues. Start the next round.`);
         } else {
-            // ONE person is in the lead
             const soleLeader = leaders[0];
             if (state.potentialWinner === soleLeader) {
-                // The same person is still in the lead
                 state.consecutiveWinRounds++;
             } else {
-                // A new person has taken the lead
                 state.potentialWinner = soleLeader;
                 state.consecutiveWinRounds = 1;
             }
 
-            // Now, check if they have won
             if (state.consecutiveWinRounds >= ROUNDS_TO_WIN) {
                 declareWinner(soleLeader);
             } else {
-                const roundsRemaining = ROUNDS_TO_WIN - state.consecutiveWinRounds;
-                alert(`${soleLeader} has the lead with ${highScore} points! They must hold the lead for ${roundsRemaining} more round(s) to win. Start the next round.`);
-            }
-        }
-    }
-
-    function declareWinner(winner) {
-        document.getElementById(`player-card-${winner.replace(/\s+/g, '-')}`).classList.add('winner');
-        document.getElementById('winner-name').textContent = winner;
-
-        const endTime = new Date().getTime();
-        const durationMs = endTime - state.gameHistory[0].startTime;
-        const minutes = Math.floor(durationMs / 60000);
-        const seconds = ((durationMs % 60000) / 1000).toFixed(0);
-        
-        state.gameHistory[0].endTime = endTime;
