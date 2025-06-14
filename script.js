@@ -6,7 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
         scores: {},
         currentGame: null,
         gameStartTime: null,
-        gameHistory: []
+        gameHistory: [],
+        contender: null,         // NEW: Name of the player who is the current contender
+        contenderWinStreak: 0    // NEW: How many consecutive rounds the contender has won
     };
 
     // DOM ELEMENTS
@@ -17,8 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const modals = {
         winner: document.getElementById('winner-modal'),
-        manageGames: document.getElementById('manage-games-modal')
+        manageGames: document.getElementById('manage-games-modal'),
+        endOfRound: document.getElementById('end-of-round-modal')
     };
+    const gameStatus = document.getElementById('game-status'); // NEW
     const gameSelect = document.getElementById('game-select');
     const playerNameInputsContainer = document.getElementById('player-inputs');
     const scoreboard = document.getElementById('scoreboard');
@@ -38,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
             state.games = savedState.games || [];
             state.gameHistory = savedState.gameHistory || [];
         }
-        // Add a default game if none exist
         if (state.games.length === 0) {
             state.games.push({ name: 'Rummikub', winningScore: 100 });
         }
@@ -52,6 +55,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showModal(modalName, show = true) {
         modals[modalName].classList.toggle('active', show);
+    }
+    
+    function updateGameStatus(message) {
+        if (message) {
+            gameStatus.textContent = message;
+            gameStatus.style.display = 'block';
+        } else {
+            gameStatus.style.display = 'none';
+        }
     }
 
     function updateGameSelect() {
@@ -71,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderScoreboard() {
         const game = state.games.find(g => g.name === state.currentGame);
         document.getElementById('game-title').textContent = state.currentGame;
-        document.getElementById('winning-score-display').textContent = `First to ${game.winningScore} wins!`;
+        document.getElementById('winning-score-display').textContent = `Winning Score: ${game.winningScore}`;
 
         scoreboard.innerHTML = state.players.map(player => `
             <div class="player-score-card" id="player-card-${player.replace(/\s+/g, '-')}">
@@ -88,6 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `).join('');
+        
+        if (state.contender) {
+             const card = document.getElementById(`player-card-${state.contender.replace(/\s+/g, '-')}`);
+             if(card) card.style.border = '3px solid var(--secondary-color)';
+        }
     }
     
     function renderHistory() {
@@ -124,8 +141,10 @@ document.addEventListener('DOMContentLoaded', () => {
         state.scores = {};
         state.players.forEach(p => state.scores[p] = 0);
         state.gameStartTime = new Date().getTime();
+        state.contender = null;
+        state.contenderWinStreak = 0;
+        updateGameStatus('');
         
-        // Start history log
         state.gameHistory.unshift({
             game: state.currentGame,
             players: state.players,
@@ -141,11 +160,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addScore(player, points) {
-        if (isNaN(points) || points === 0) return;
+        if (isNaN(points)) return; // Allow 0 points to be entered
 
         state.scores[player] += points;
         
-        // Log the point change
         state.gameHistory[0].pointLog.push({
             player: player,
             pointsAdded: points,
@@ -153,37 +171,85 @@ document.addEventListener('DOMContentLoaded', () => {
             timestamp: new Date().getTime()
         });
         saveState();
-        
-        renderScoreboard(); // Re-render to update score
-        checkWinner();
+        renderScoreboard();
+        showModal('endOfRound');
     }
 
-    function checkWinner() {
+    function processEndOfRound() {
+        showModal('endOfRound', false);
         const game = state.games.find(g => g.name === state.currentGame);
-        const winner = state.players.find(p => state.scores[p] >= game.winningScore);
 
-        if (winner) {
-            document.getElementById(`player-card-${winner.replace(/\s+/g, '-')}`).classList.add('winner');
-            document.getElementById('winner-name').textContent = winner;
-            
-            // Finalize history log
-            const endTime = new Date().getTime();
-            const durationMs = endTime - state.gameHistory[0].startTime;
-            const minutes = Math.floor(durationMs / 60000);
-            const seconds = ((durationMs % 60000) / 1000).toFixed(0);
-            
-            state.gameHistory[0].endTime = endTime;
-            state.gameHistory[0].winner = winner;
-            state.gameHistory[0].duration = `${minutes}m ${seconds}s`;
-            saveState();
+        const topScore = Math.max(...Object.values(state.scores));
+        const topPlayers = state.players.filter(p => state.scores[p] === topScore);
 
-            setTimeout(() => showModal('winner'), 500); // Slight delay for effect
+        // Rule: Game is normal if no one has reached the winning score
+        if (topScore < game.winningScore) {
+            updateGameStatus("The round is over. No one has reached the winning score yet.");
+            // If there was a contender, they've lost their status
+            if (state.contender) {
+                state.contender = null;
+                state.contenderWinStreak = 0;
+                renderScoreboard(); // Re-render to remove highlight
+            }
+            return;
         }
+        
+        // From here on, topScore >= winningScore
+
+        // Rule: If there's a tie for the lead, any win streak is broken
+        if (topPlayers.length > 1) {
+            state.contender = null;
+            state.contenderWinStreak = 0;
+            renderScoreboard(); // Re-render to remove any highlights
+            updateGameStatus(`It's a tie for the lead between ${topPlayers.join(', ')}! The win streak is broken.`);
+            return;
+        }
+
+        // Rule: There is one clear leader
+        const leader = topPlayers[0];
+
+        if (leader === state.contender) {
+            // The current contender won the round again
+            state.contenderWinStreak++;
+            updateGameStatus(`${leader} won the round again! Win streak is now ${state.contenderWinStreak}.`);
+        } else {
+            // A new contender has emerged
+            state.contender = leader;
+            state.contenderWinStreak = 1;
+            renderScoreboard(); // Re-render to highlight the new contender
+            updateGameStatus(`${leader} is the new Contender! They must win the next round to win the game.`);
+        }
+
+        // Final Win Condition Check
+        if (state.contenderWinStreak === 2) {
+            updateGameStatus(`${leader} has won 2 consecutive rounds and wins the game!`);
+            declareWinner(leader);
+        }
+    }
+    
+    function declareWinner(winnerName) {
+        document.getElementById(`player-card-${winnerName.replace(/\s+/g, '-')}`).classList.add('winner');
+        document.getElementById('winner-name').textContent = winnerName;
+
+        const endTime = new Date().getTime();
+        const durationMs = endTime - state.gameHistory[0].startTime;
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+
+        state.gameHistory[0].endTime = endTime;
+        state.gameHistory[0].winner = winnerName;
+        state.gameHistory[0].duration = `${minutes}m ${seconds}s`;
+        saveState();
+
+        setTimeout(() => {
+            showModal('winner');
+            state.contender = null;
+            state.contenderWinStreak = 0;
+        }, 1000); // Delay to allow reading the final status message
     }
     
     function startNewGame() {
         showModal('winner', false);
-        // Reset player name inputs to default 2
         playerNameInputsContainer.innerHTML = `
             <input type="text" placeholder="Player 1 Name" class="player-name-input">
             <input type="text" placeholder="Player 2 Name" class="player-name-input">
@@ -207,20 +273,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const player = e.target.dataset.player;
             const input = e.target.previousElementSibling;
             const points = parseInt(input.value, 10);
-            addScore(player, points);
-            input.value = '';
+            if (!isNaN(points)) { // Check if it's a valid number
+                addScore(player, points);
+                input.value = '';
+            }
         }
     });
-
-    // New Game buttons
+    
+    document.getElementById('confirm-round-end-yes').addEventListener('click', processEndOfRound);
+    document.getElementById('confirm-round-end-no').addEventListener('click', () => showModal('endOfRound', false));
     document.getElementById('new-game-from-winner-btn').addEventListener('click', startNewGame);
     document.getElementById('new-game-from-game-btn').addEventListener('click', startNewGame);
-
-    // Manage Games Modal
-    document.getElementById('manage-games-btn').addEventListener('click', () => {
-        updateManageGamesList();
-        showModal('manageGames');
-    });
+    document.getElementById('manage-games-btn').addEventListener('click', () => { updateManageGamesList(); showModal('manageGames'); });
     document.getElementById('close-manage-games-btn').addEventListener('click', () => showModal('manageGames', false));
     document.getElementById('save-new-game-btn').addEventListener('click', () => {
         const name = document.getElementById('new-game-name').value.trim();
@@ -232,9 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateManageGamesList();
             document.getElementById('new-game-name').value = '';
             document.getElementById('new-game-score').value = '';
-        } else {
-            alert('Please enter a valid name and winning score.');
-        }
+        } else { alert('Please enter a valid name and winning score.'); }
     });
     document.getElementById('saved-games-list').addEventListener('click', e => {
         if (e.target.classList.contains('delete-game-btn')) {
@@ -248,11 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // History Screen
-    document.getElementById('view-history-btn').addEventListener('click', () => {
-        renderHistory();
-        showScreen('history');
-    });
+    document.getElementById('view-history-btn').addEventListener('click', () => { renderHistory(); showScreen('history'); });
     document.getElementById('back-to-setup-btn').addEventListener('click', () => showScreen('setup'));
     historyList.addEventListener('click', e => {
         if (e.target.closest('.history-summary')) {
@@ -262,7 +320,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // --- INITIALIZATION ---
     loadState();
     updateGameSelect();
     showScreen('setup');
